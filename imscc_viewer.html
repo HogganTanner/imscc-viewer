@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IMSCC Course Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --blue:       #0770e3;
+  --blue-dk:    #0560c1;
+  --green:      #1a7f37;
+  --red:        #cf222e;
+  --purple:     #6639ba;
+  --orange:     #9a6700;
+  --teal:       #0969a2;
+  --gray-bg:    #f0f2f5;
+  --gray-lt:    #f6f8fa;
+  --border:     #d0d7de;
+  --text:       #24292f;
+  --muted:      #656d76;
+  --sidebar-w:  260px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background: var(--gray-bg); color: var(--text); font-size: 15px; }
+
+/* ── Upload ─────────────────────────────────────────── */
+#screen-upload {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.upload-card {
+  background: white; border-radius: 14px; padding: 48px 40px;
+  text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.09);
+  max-width: 520px; width: 100%;
+}
+.upload-icon { font-size: 56px; margin-bottom: 16px; }
+.upload-card h1 { font-size: 26px; margin-bottom: 8px; }
+.upload-card > p { color: var(--muted); margin-bottom: 28px; line-height: 1.55; }
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 32px;
+  margin-bottom: 14px; cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--blue); background: #f0f7ff; }
+.drop-label { color: var(--muted); margin-bottom: 14px; }
+.choose-btn {
+  display: inline-block; padding: 9px 20px; background: var(--blue);
+  color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+}
+.choose-btn:hover { background: var(--blue-dk); }
+#file-input { display: none; }
+.upload-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.warn-box {
+  margin-top: 16px; padding: 10px 14px; background: #fff8c5;
+  border: 1px solid #e3b341; border-radius: 6px; font-size: 13px; color: #7d4e00; text-align: left;
+}
+
+/* ── Loading ─────────────────────────────────────────── */
+#screen-loading {
+  display: none; min-height: 100vh;
+  align-items: center; justify-content: center;
+}
+.loading-card {
+  background: white; border-radius: 12px; padding: 40px 48px;
+  text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.09); max-width: 420px; width: 100%;
+}
+.loading-spinner { font-size: 40px; margin-bottom: 16px; animation: spin 1.5s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-card h2 { margin-bottom: 8px; }
+.loading-card p  { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+.progress-bar-outer {
+  height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 10px;
+}
+.progress-bar-inner { height: 100%; background: var(--blue); border-radius: 4px; transition: width .3s; width: 0%; }
+.progress-label { font-size: 13px; color: var(--muted); }
+
+/* ── Viewer ──────────────────────────────────────────── */
+#screen-viewer { display: none; flex-direction: column; min-height: 100vh; }
+
+/* Header */
+.v-header {
+  background: white; border-bottom: 1px solid var(--border);
+  padding: 10px 18px; display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 30;
+}
+.v-header-title { font-weight: 700; font-size: 15px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-header-sub   { font-size: 13px; color: var(--muted); }
+.h-btn {
+  padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+  background: white; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap;
+}
+.h-btn:hover { background: var(--gray-lt); }
+
+/* Layout */
+.v-body { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 45px); }
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  border-right: 1px solid var(--border); background: white;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar-search {
+  padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.search-input {
+  width: 100%; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px; font-family: inherit; color: var(--text);
+}
+.search-input:focus { outline: none; border-color: var(--blue); }
+.sidebar-tree { overflow-y: auto; flex: 1; padding: 6px 0; }
+
+/* Tree items */
+.tree-module {
+  cursor: pointer; user-select: none;
+  padding: 7px 14px; display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  border-bottom: 1px solid var(--gray-lt);
+}
+.tree-module:hover { background: var(--gray-lt); }
+.tree-module .caret { transition: transform .2s; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.tree-module.open .caret { transform: rotate(90deg); }
+.tree-module-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-children { display: none; }
+.tree-children.open { display: block; }
+.tree-item {
+  padding: 6px 14px 6px 28px; display: flex; align-items: flex-start; gap: 7px;
+  cursor: pointer; font-size: 13px; color: var(--text); line-height: 1.4;
+}
+.tree-item:hover { background: var(--gray-lt); }
+.tree-item.active { background: #e8f0fe; }
+.tree-item.active .item-title { color: var(--blue); font-weight: 500; }
+.item-icon { flex-shrink: 0; margin-top: 1px; }
+.item-title { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* Flat items (no parent module) */
+.tree-flat-item {
+  padding: 6px 14px; display: flex; align-items: flex-start; gap: 7px;
+  cursor: pointer; font-size: 13px; color: var(--text);
+}
+.tree-flat-item:hover { background: var(--gray-lt); }
+.tree-flat-item.active { background: #e8f0fe; }
+.tree-flat-item.active .item-title { color: var(--blue); }
+
+/* Content area */
+.content-area { flex: 1; overflow-y: auto; padding: 24px; background: var(--gray-bg); }
+.content-card {
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  max-width: 860px; margin: 0 auto;
+}
+.content-card-header {
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.content-card-title { font-size: 18px; font-weight: 700; flex: 1; }
+.content-type-chip {
+  padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 600;
+  white-space: nowrap; flex-shrink: 0; margin-top: 3px;
+}
+.chip-page  { background: #ddf4ff; color: #0550ae; }
+.chip-quiz  { background: #fff8c5; color: #9a6700; }
+.chip-assign{ background: #dafbe1; color: #116329; }
+.chip-disc  { background: #ffebe9; color: #a40e26; }
+.chip-link  { background: #f6f0ff; color: var(--purple); }
+.chip-lti   { background: #e1e4e8; color: var(--muted); }
+.chip-other { background: #e1e4e8; color: var(--muted); }
+.content-card-body { padding: 24px; }
+
+/* HTML content */
+.html-content { line-height: 1.7; }
+.html-content h1,.html-content h2,.html-content h3 { margin: 16px 0 8px; }
+.html-content p  { margin-bottom: 10px; }
+.html-content ul,.html-content ol { padding-left: 24px; margin-bottom: 10px; }
+.html-content li { margin-bottom: 4px; }
+.html-content table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+.html-content td,.html-content th { border: 1px solid var(--border); padding: 8px 10px; }
+.html-content img  { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; }
+.html-content pre  { background: var(--gray-lt); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 10px 0; }
+.html-content code { background: var(--gray-lt); padding: 1px 4px; border-radius: 3px; font-size: .9em; }
+.html-content a    { color: var(--blue); }
+.html-content blockquote { border-left: 3px solid var(--border); padding-left: 14px; color: var(--muted); margin: 10px 0; }
+
+/* QTI question rendering */
+.qti-question-list { display: flex; flex-direction: column; gap: 20px; }
+.qti-q {
+  padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--gray-lt);
+}
+.qti-q-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.qti-q-num   { font-size: 12px; font-weight: 700; color: var(--muted); }
+.qti-q-chip  { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+.chip-mc   { background: #ddf4ff; color: #0550ae; }
+.chip-tf   { background: #fff8c5; color: #9a6700; }
+.chip-ma   { background: #dafbe1; color: #116329; }
+.chip-ess  { background: #ffebe9; color: #a40e26; }
+.chip-dd   { background: #f6f0ff; color: var(--purple); }
+.qti-q-text { line-height: 1.65; margin-bottom: 14px; }
+.qti-q-text table { border-collapse: collapse; width: 100%; }
+.qti-q-text td, .qti-q-text th { border: 1px solid var(--border); padding: 6px 8px; }
+.qti-q-text img { max-width: 100%; height: auto; }
+.choices { display: flex; flex-direction: column; gap: 7px; }
+.c-label {
+  display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px;
+  border: 1.5px solid var(--border); border-radius: 6px; cursor: pointer; background: white;
+  transition: border-color .14s, background .14s;
+}
+.c-label:hover { border-color: var(--blue); background: #f0f7ff; }
+.c-label input { margin-top: 3px; flex-shrink: 0; accent-color: var(--blue); }
+.c-label.correct   { border-color: var(--green)!important; background: #dafbe1!important; }
+.c-label.incorrect { border-color: var(--red)!important;   background: #ffebe9!important; }
+.c-label.missed    { border-color: var(--green)!important; background: #dafbe1!important; border-style: dashed!important; }
+.qti-essay { width: 100%; min-height: 100px; padding: 8px 10px; border: 1.5px solid var(--border);
+             border-radius: 6px; font-family: inherit; font-size: 14px; resize: vertical; }
+.qti-essay:focus { outline: none; border-color: var(--blue); }
+.qti-dd-sel { padding: 4px 7px; border: 1.5px solid var(--border); border-radius: 5px;
+              font-family: inherit; font-size: 14px; background: white; }
+.check-btn { margin-top: 11px; padding: 7px 14px; background: var(--blue); color: white;
+             border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.check-btn:hover { background: var(--blue-dk); }
+.fb-box { margin-top: 10px; padding: 10px 12px; border-radius: 6px; font-size: 13px; display: none; }
+.fb-box.correct   { background: #dafbe1; border: 1px solid #a7d9b5; color: #116329; }
+.fb-box.incorrect { background: #ffebe9; border: 1px solid #f5b8be; color: #a40e26; }
+.legend { margin-top: 8px; font-size: 12px; color: var(--muted); display: none; }
+.leg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
+
+/* Assignment / Discussion meta */
+.meta-row { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; padding-bottom: 16px;
+            border-bottom: 1px solid var(--border); }
+.meta-item { font-size: 13px; }
+.meta-label { font-weight: 600; color: var(--muted); display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; }
+.meta-value { color: var(--text); }
+
+/* Web link */
+.link-box { padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--gray-lt); }
+.link-url  { font-size: 14px; color: var(--blue); word-break: break-all; margin-bottom: 12px; }
+.open-btn  { padding: 8px 16px; background: var(--blue); color: white; border: none; border-radius: 6px;
+             cursor: pointer; font-size: 14px; font-weight: 500; text-decoration: none; display: inline-block; }
+.open-btn:hover { background: var(--blue-dk); }
+
+/* Placeholder */
+.placeholder { padding: 40px; text-align: center; color: var(--muted); }
+.placeholder-icon { font-size: 40px; margin-bottom: 12px; }
+.placeholder p { font-size: 14px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ── Upload ──────────────────────────────────────────── -->
+<div id="screen-upload">
+  <div class="upload-card">
+    <div class="upload-icon">📦</div>
+    <h1>IMSCC Course Viewer</h1>
+    <p>Open any IMS Common Cartridge (.imscc or .zip) file to browse course content — pages, quizzes, assignments, discussions, and links.</p>
+    <div class="drop-zone" id="drop-zone">
+      <p class="drop-label">Drag &amp; drop your .imscc or .zip file here, or</p>
+      <label class="choose-btn" for="file-input">Choose File</label>
+      <input type="file" id="file-input" accept=".imscc,.zip">
+    </div>
+    <p class="upload-hint">Works entirely in your browser — no data is uploaded anywhere.</p>
+    <div class="warn-box">⚠️ <strong>Large files:</strong> This viewer reads the entire file into memory. Files over 1 GB may take 30–90 seconds to load and require sufficient RAM. Media files (videos, large images) are loaded on demand.</div>
+  </div>
+</div>
+
+<!-- ── Loading ─────────────────────────────────────────── -->
+<div id="screen-loading">
+  <div class="loading-card">
+    <div class="loading-spinner">⚙️</div>
+    <h2>Loading Course</h2>
+    <p id="loading-msg">Reading ZIP archive…</p>
+    <div class="progress-bar-outer">
+      <div class="progress-bar-inner" id="progress-bar"></div>
+    </div>
+    <div class="progress-label" id="progress-label">0%</div>
+  </div>
+</div>
+
+<!-- ── Viewer ───────────────────────────────────────────── -->
+<div id="screen-viewer">
+  <div class="v-header">
+    <span class="v-header-title" id="course-title">Course</span>
+    <span class="v-header-sub"  id="course-sub"></span>
+    <button class="h-btn" onclick="backToUpload()">↩ New File</button>
+  </div>
+  <div class="v-body">
+    <div class="sidebar">
+      <div class="sidebar-search">
+        <input class="search-input" type="text" id="search-input" placeholder="🔍  Search items…" oninput="filterTree(this.value)">
+      </div>
+      <div class="sidebar-tree" id="sidebar-tree"></div>
+    </div>
+    <div class="content-area" id="content-area">
+      <div class="placeholder">
+        <div class="placeholder-icon">👈</div>
+        <p>Select an item from the course structure on the left to preview it.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────
+let zip        = null;
+let course     = { title: 'Course', tree: [], resources: {}, itemCount: 0 };
+let blobCache  = {};
+let activeEl   = null;
+let allItems   = []; // flat list for search
+
+// ── Helpers ─────────────────────────────────────────────────
+function show(id)  { document.getElementById(id).style.display = 'flex'; }
+function hide(id)  { document.getElementById(id).style.display = 'none'; }
+
+function setProgress(pct, msg) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = Math.round(pct) + '%';
+  if (msg) document.getElementById('loading-msg').textContent = msg;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── ZIP loading ──────────────────────────────────────────────
+async function loadFile(file) {
+  if (!file) return;
+  hide('screen-upload');
+  show('screen-loading');
+  setProgress(0, 'Reading ZIP archive…');
+
+  try {
+    zip = await JSZip.loadAsync(file, {
+      onUpdate(meta) { setProgress(meta.percent * 0.7, 'Reading ZIP archive…'); }
+    });
+
+    setProgress(75, 'Parsing course manifest…');
+    const manifestFile = zip.file('imsmanifest.xml');
+    if (!manifestFile) throw new Error('No imsmanifest.xml found. Make sure this is a valid IMSCC / Common Cartridge file.');
+
+    const manifestXml = await manifestFile.async('string');
+    setProgress(85, 'Building course structure…');
+    course = parseManifest(manifestXml);
+
+    setProgress(95, 'Rendering interface…');
+    await new Promise(r => setTimeout(r, 100)); // let UI breathe
+
+    await buildViewer();
+    hide('screen-loading');
+    show('screen-viewer');
+    setProgress(100);
+  } catch(err) {
+    hide('screen-loading');
+    show('screen-upload');
+    alert('Error loading file:\n\n' + err.message);
+  }
+}
+
+// ── Manifest parser ──────────────────────────────────────────
+function parseManifest(xmlStr) {
+  const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+
+  // Course title — try several locations
+  let courseTitle = 'Untitled Course';
+  for (const sel of ['lom\\:string', 'string', 'title']) {
+    const el = doc.querySelector(sel);
+    if (el && el.textContent.trim()) { courseTitle = el.textContent.trim(); break; }
+  }
+
+  // Resource map
+  const resources = {};
+  doc.querySelectorAll('resource').forEach(res => {
+    const id    = res.getAttribute('identifier') || '';
+    const type  = (res.getAttribute('type') || '').toLowerCase();
+    const href  = res.getAttribute('href') || '';
+    const files = Array.from(res.querySelectorAll('file')).map(f => f.getAttribute('href')).filter(Boolean);
+    if (id) resources[id] = { id, type, href, files };
+  });
+
+  // Parse org tree
+  function childItems(el) {
+    return Array.from(el.children).filter(c => c.localName === 'item');
+  }
+  function getTitle(el) {
+    for (const c of el.children) { if (c.localName === 'title') return c.textContent.trim(); }
+    return el.getAttribute('identifier') || '(untitled)';
+  }
+  function parseItem(el, depth) {
+    const id    = el.getAttribute('identifier') || '';
+    const idref = el.getAttribute('identifierref') || '';
+    const title = getTitle(el);
+    const kids  = childItems(el).map(c => parseItem(c, depth + 1));
+    return { id, idref, title, depth, children: kids, resource: resources[idref] || null };
+  }
+
+  let tree = [];
+  const orgEl = doc.querySelector('organization');
+  if (orgEl) {
+    const rootItems = childItems(orgEl);
+    if (rootItems.length === 1 && !rootItems[0].getAttribute('identifierref')) {
+      // Single root container — skip it, use its children
+      tree = childItems(rootItems[0]).map(c => parseItem(c, 0));
+    } else {
+      tree = rootItems.map(c => parseItem(c, 0));
+    }
+  }
+
+  // Count leaf items
+  let itemCount = 0;
+  function countLeaves(nodes) { nodes.forEach(n => { if (n.resource) itemCount++; countLeaves(n.children); }); }
+  countLeaves(tree);
+
+  return { title: courseTitle, tree, resources, itemCount };
+}
+
+// ── Content type utils ───────────────────────────────────────
+function getCategory(resource) {
+  if (!resource) return 'unknown';
+  const t = resource.type;
+  if (t.includes('qti') || t.includes('assessment'))           return 'quiz';
+  if (t.includes('imswl') || t.includes('weblink'))            return 'link';
+  if (t.includes('imsdt') || t.includes('discussion'))         return 'discussion';
+  if (t.includes('basiclti') || t.includes('lti'))             return 'lti';
+  if (t === 'webcontent' || t.startsWith('webcontent'))        return 'page';
+  if (t.includes('learning-application-resource') || t.includes('associatedcontent')) return 'canvas';
+  return 'other';
+}
+
+const CAT_ICON  = { quiz:'❓', link:'🔗', discussion:'💬', lti:'🔧', page:'📄', canvas:'📝', other:'📋', unknown:'📁' };
+const CAT_LABEL = { quiz:'Quiz', link:'Link', discussion:'Discussion', lti:'External Tool', page:'Page', canvas:'Content', other:'File', unknown:'Item' };
+const CAT_CHIP  = { quiz:'chip-quiz', link:'chip-link', discussion:'chip-disc', lti:'chip-lti', page:'chip-page', canvas:'chip-assign', other:'chip-other', unknown:'chip-other' };
+
+// ── Canvas module_meta.xml parser ────────────────────────────
+function textOf(el, tag) {
+  const f = el.querySelector(tag); return f ? f.textContent.trim() : '';
+}
+
+async function parseModuleMeta() {
+  const f = findZipFile('course_settings/module_meta.xml');
+  if (!f) return null;
+  try {
+    const doc = new DOMParser().parseFromString(await f.async('string'), 'application/xml');
+    const modules = [];
+    for (const mod of doc.querySelectorAll('module')) {
+      const title    = textOf(mod, 'title') || '(Untitled Module)';
+      const position = parseInt(textOf(mod, 'position') || '999');
+      const items    = [];
+      for (const item of mod.querySelectorAll('items > item')) {
+        const contentType = textOf(item, 'content_type');
+        const title       = textOf(item, 'title');
+        const idref       = textOf(item, 'identifierref');
+        const url         = textOf(item, 'url');
+        const pos         = parseInt(textOf(item, 'position') || '999');
+        items.push({ contentType, title, idref, url, pos });
+      }
+      items.sort((a, b) => a.pos - b.pos);
+      modules.push({ title, position, items });
+    }
+    modules.sort((a, b) => a.position - b.position);
+    return modules.length ? modules : null;
+  } catch(e) { console.warn('module_meta.xml parse error:', e); return null; }
+}
+
+// ── Build viewer ─────────────────────────────────────────────
+async function buildViewer() {
+  document.getElementById('course-title').textContent = course.title;
+
+  const modules = await parseModuleMeta();
+  if (modules) {
+    buildCanvasModuleTree(modules);
+  } else {
+    document.getElementById('course-sub').textContent = `${course.itemCount} items`;
+    buildTree(course.tree);
+  }
+}
+
+// ── Canvas module tree ────────────────────────────────────────
+function buildCanvasModuleTree(modules) {
+  const container = document.getElementById('sidebar-tree');
+  container.innerHTML = '';
+  allItems = [];
+
+  // Syllabus at top
+  const syllabusFile = findZipFile('course_settings/syllabus.html');
+  if (syllabusFile) {
+    const div = document.createElement('div');
+    div.className = 'tree-flat-item';
+    div.innerHTML = `<span class="item-icon">📋</span><span class="item-title" style="font-weight:600">Syllabus</span>`;
+    div.onclick = () => { markActive(div); renderSyllabus(); };
+    container.appendChild(div);
+    allItems.push({ el: div, node: { title: 'Syllabus', resource: null }, titleLower: 'syllabus' });
+  }
+
+  let totalItems = 0;
+
+  for (const mod of modules) {
+    const wrapper  = document.createElement('div');
+    const header   = document.createElement('div');
+    header.className = 'tree-module open';
+    header.innerHTML = `<span class="caret">▶</span><span class="tree-module-title">${escHtml(mod.title)}</span>`;
+
+    const kids = document.createElement('div');
+    kids.className = 'tree-children open';
+
+    for (const item of mod.items) {
+      if (item.contentType === 'ContextModuleSubHeader') {
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'padding:5px 14px 4px 28px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--gray-lt);border-bottom:1px solid var(--border);';
+        hdr.textContent = item.title;
+        kids.appendChild(hdr);
+        continue;
+      }
+
+      const res  = item.idref ? course.resources[item.idref] : null;
+      const cat  = res ? getCategory(res) : (item.url ? 'link' : 'other');
+      let icon   = CAT_ICON[cat];
+      if (item.contentType === 'WikiPage')                     icon = '📄';
+      else if (item.contentType === 'Assignment')              icon = '📝';
+      else if (item.contentType.toLowerCase().includes('quiz')) icon = '❓';
+      else if (item.contentType === 'ExternalUrl')             icon = '🔗';
+      else if (item.contentType === 'ContextExternalTool')     icon = '🔧';
+
+      const div = document.createElement('div');
+      div.className = 'tree-item';
+      div.innerHTML = `<span class="item-icon">${icon}</span><span class="item-title">${escHtml(item.title)}</span>`;
+      div.onclick = () => { markActive(div); renderCanvasItem(item, res); };
+      kids.appendChild(div);
+      allItems.push({ el: div, node: { title: item.title, resource: res }, titleLower: item.title.toLowerCase() });
+      totalItems++;
+    }
+
+    header.onclick = () => { header.classList.toggle('open'); kids.classList.toggle('open'); };
+    wrapper.appendChild(header);
+    wrapper.appendChild(kids);
+    container.appendChild(wrapper);
+  }
+
+  document.getElementById('course-sub').textContent = `${totalItems} items`;
+}
+
+function markActive(el) {
+  document.querySelectorAll('.tree-item.active, .tree-flat-item.active').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  activeEl = el;
+}
+
+// ── Canvas item dispatcher ────────────────────────────────────
+async function renderCanvasItem(item, res) {
+  const area = document.getElementById('content-area');
+  area.innerHTML = '<div class="placeholder"><div class="loading-spinner" style="font-size:30px;animation:spin 1s linear infinite">⚙️</div><p style="margin-top:12px;font-size:13px;color:var(--muted)">Loading…</p></div>';
+
+  try {
+    if (item.contentType === 'ExternalUrl' || (!res && item.url)) {
+      renderExternalUrl(item, area); return;
+    }
+    if (item.contentType === 'ContextExternalTool' || !res) {
+      renderLTI(area, { title: item.title }, res || {}); return;
+    }
+    const cat = getCategory(res);
+    const node = { title: item.title, resource: res };
+    switch (cat) {
+      case 'page':       await renderPage(area, node, res);       break;
+      case 'quiz':       await renderQuiz(area, node, res);       break;
+      case 'discussion': await renderDiscussion(area, node, res); break;
+      case 'link':       await renderLink(area, node, res);       break;
+      case 'canvas':     await renderCanvas(area, node, res);     break;
+      case 'lti':        renderLTI(area, node, res);               break;
+      default:           renderOther(area, node, res);             break;
+    }
+  } catch(e) { area.innerHTML = errorCard(item.title, 'other', e.message); }
+}
+
+// ── Syllabus renderer ─────────────────────────────────────────
+async function renderSyllabus() {
+  const area = document.getElementById('content-area');
+  area.innerHTML = '<div class="placeholder"><div class="loading-spinner" style="font-size:30px;animation:spin 1s linear infinite">⚙️</div></div>';
+  try {
+    const f = findZipFile('course_settings/syllabus.html');
+    if (!f) { area.innerHTML = emptyCard('Syllabus', '📋', 'Syllabus file not found.'); return; }
+    let html = await f.async('string');
+    html = extractBody(html);
+    html = await resolveImages(html, 'course_settings/syllabus.html');
+    area.innerHTML = cardWrap('Syllabus', 'page', `<div class="html-content">${html}</div>`);
+  } catch(e) { area.innerHTML = errorCard('Syllabus', 'page', e.message); }
+}
+
+// ── External URL renderer ─────────────────────────────────────
+function renderExternalUrl(item, area) {
+  const url = item.url || '';
+  const body = url
+    ? `<div class="link-box"><div class="link-url">${escHtml(url)}</div><a class="open-btn" href="${escHtml(url)}" target="_blank" rel="noopener">Open Link ↗</a></div>`
+    : `<div class="link-box"><p style="color:var(--muted);font-size:14px">No URL available for this item.</p></div>`;
+  area.innerHTML = cardWrap(item.title, 'link', body);
+}
+
+function buildTree(tree) {
+  const container = document.getElementById('sidebar-tree');
+  container.innerHTML = '';
+  allItems = [];
+  tree.forEach(node => container.appendChild(buildNode(node)));
+}
+
+function buildNode(node) {
+  const hasKids   = node.children.length > 0;
+  const isLeaf    = node.resource !== null;
+  const cat       = node.resource ? getCategory(node.resource) : 'unknown';
+
+  if (!isLeaf && hasKids) {
+    // Module / folder
+    const wrapper = document.createElement('div');
+    const header  = document.createElement('div');
+    header.className = 'tree-module open';
+    header.innerHTML = `<span class="caret">▶</span><span class="tree-module-title">${escHtml(node.title)}</span>`;
+
+    const children = document.createElement('div');
+    children.className = 'tree-children open';
+    node.children.forEach(child => children.appendChild(buildNode(child)));
+
+    header.onclick = () => {
+      header.classList.toggle('open');
+      children.classList.toggle('open');
+    };
+    wrapper.appendChild(header);
+    wrapper.appendChild(children);
+    return wrapper;
+  } else if (isLeaf) {
+    // Content item
+    const div = document.createElement('div');
+    div.className = 'tree-item';
+    div.dataset.nodeId = node.id;
+    div.innerHTML = `<span class="item-icon">${CAT_ICON[cat]}</span><span class="item-title">${escHtml(node.title)}</span>`;
+    div.onclick = () => selectItem(div, node);
+    allItems.push({ el: div, node, titleLower: node.title.toLowerCase() });
+
+    // Also add flat children if any (some items have both resource + children)
+    if (hasKids) {
+      const wrap = document.createElement('div');
+      wrap.appendChild(div);
+      node.children.forEach(child => wrap.appendChild(buildNode(child)));
+      return wrap;
+    }
+    return div;
+  } else {
+    // Empty folder or unknown
+    const div = document.createElement('div');
+    div.className = 'tree-flat-item';
+    div.innerHTML = `<span class="item-icon">📁</span><span class="item-title" style="color:var(--muted)">${escHtml(node.title)}</span>`;
+    return div;
+  }
+}
+
+// ── Search / filter ──────────────────────────────────────────
+function filterTree(query) {
+  const q = query.toLowerCase().trim();
+  if (!q) {
+    // Show all, restore tree
+    buildTree(course.tree);
+    return;
+  }
+  const container = document.getElementById('sidebar-tree');
+  container.innerHTML = '';
+  const matches = allItems.filter(i => i.titleLower.includes(q));
+  if (matches.length === 0) {
+    container.innerHTML = '<div style="padding:16px;text-align:center;font-size:13px;color:var(--muted)">No results</div>';
+    return;
+  }
+  matches.forEach(({ node }) => {
+    const cat = getCategory(node.resource);
+    const div = document.createElement('div');
+    div.className = 'tree-flat-item';
+    div.innerHTML = `<span class="item-icon">${CAT_ICON[cat]}</span><span class="item-title">${escHtml(node.title)}</span>`;
+    div.onclick = () => { markActive(div); renderContent(node); };
+    container.appendChild(div);
+  });
+}
+
+// ── Item selection ───────────────────────────────────────────
+function selectItem(el, node) {
+  markActive(el);
+  renderContent(node);
+}
+
+// ── Content rendering ────────────────────────────────────────
+async function renderContent(node) {
+  const area = document.getElementById('content-area');
+  area.innerHTML = '<div class="placeholder"><div class="loading-spinner" style="font-size:30px;animation:spin 1s linear infinite">⚙️</div><p style="margin-top:12px;font-size:13px;color:var(--muted)">Loading…</p></div>';
+
+  const res = node.resource;
+  if (!res) { area.innerHTML = emptyCard(node.title, '📁', 'This item has no associated content.'); return; }
+
+  const cat = getCategory(res);
+
+  try {
+    switch (cat) {
+      case 'page':       await renderPage(area, node, res);       break;
+      case 'quiz':       await renderQuiz(area, node, res);       break;
+      case 'discussion': await renderDiscussion(area, node, res); break;
+      case 'link':       await renderLink(area, node, res);       break;
+      case 'canvas':     await renderCanvas(area, node, res);     break;
+      case 'lti':        renderLTI(area, node, res);               break;
+      default:           renderOther(area, node, res);             break;
+    }
+  } catch(e) {
+    area.innerHTML = errorCard(node.title, cat, e.message);
+  }
+}
+
+// ── Card wrappers ────────────────────────────────────────────
+function cardWrap(title, cat, bodyHtml, metaHtml = '') {
+  const chip = `<span class="content-type-chip ${CAT_CHIP[cat]}">${CAT_LABEL[cat]}</span>`;
+  return `<div class="content-card">
+    <div class="content-card-header">
+      <div class="content-card-title">${escHtml(title)}</div>${chip}
+    </div>
+    <div class="content-card-body">${metaHtml}${bodyHtml}</div>
+  </div>`;
+}
+
+function emptyCard(title, icon, msg) {
+  return `<div class="content-card"><div class="content-card-body"><div class="placeholder"><div class="placeholder-icon">${icon}</div><p>${escHtml(msg)}</p></div></div></div>`;
+}
+
+function errorCard(title, cat, msg) {
+  return cardWrap(title, cat, `<div style="color:var(--red);font-size:14px;padding:8px">⚠️ Could not load content: ${escHtml(msg)}</div>`);
+}
+
+// ── Page renderer ────────────────────────────────────────────
+async function renderPage(area, node, res) {
+  const htmlPath = res.href || (res.files.find(f => f.endsWith('.html')) || res.files[0] || '');
+  if (!htmlPath) { area.innerHTML = emptyCard(node.title, 'page', 'No HTML file found for this page.'); return; }
+
+  const fileEntry = findZipFile(htmlPath);
+  if (!fileEntry) { area.innerHTML = emptyCard(node.title, 'page', `File not found in archive: ${htmlPath}`); return; }
+
+  let html = await fileEntry.async('string');
+  html = extractBody(html);
+  html = await resolveImages(html, htmlPath);
+
+  area.innerHTML = cardWrap(node.title, 'page', `<div class="html-content">${html}</div>`);
+}
+
+// ── Quiz renderer (QTI 1.2) ───────────────────────────────────
+async function renderQuiz(area, node, res) {
+  const xmlPath = res.href || (res.files.find(f => f.endsWith('.xml') || f.endsWith('.qti')) || '');
+  if (!xmlPath) { area.innerHTML = emptyCard(node.title, 'quiz', 'No QTI file found.'); return; }
+
+  const fileEntry = findZipFile(xmlPath);
+  if (!fileEntry) { area.innerHTML = emptyCard(node.title, 'quiz', `File not found: ${xmlPath}`); return; }
+
+  const xmlStr = await fileEntry.async('string');
+  const questionsHtml = buildQTIHtml(xmlStr);
+  area.innerHTML = cardWrap(node.title, 'quiz', questionsHtml);
+}
+
+// ── Discussion renderer ───────────────────────────────────────
+async function renderDiscussion(area, node, res) {
+  const xmlPath = res.href || (res.files.find(f => f.endsWith('.xml')) || '');
+  if (!xmlPath) { area.innerHTML = emptyCard(node.title, 'discussion', 'No discussion file found.'); return; }
+
+  const fileEntry = findZipFile(xmlPath);
+  if (!fileEntry) { area.innerHTML = emptyCard(node.title, 'discussion', `File not found: ${xmlPath}`); return; }
+
+  const xmlStr = await fileEntry.async('string');
+  const doc    = new DOMParser().parseFromString(xmlStr, 'application/xml');
+
+  const textEl = doc.querySelector('text') || doc.querySelector('body') || doc.querySelector('description');
+  const rawText = textEl ? textEl.textContent : '';
+  let bodyHtml;
+  if (rawText.trim().startsWith('<')) {
+    bodyHtml = `<div class="html-content">${rawText}</div>`;
+  } else {
+    bodyHtml = `<div class="html-content"><p>${escHtml(rawText)}</p></div>`;
+  }
+
+  area.innerHTML = cardWrap(node.title, 'discussion',
+    `<div style="margin-bottom:14px;font-size:13px;color:var(--muted)">💬 Discussion prompt</div>${bodyHtml}`);
+}
+
+// ── Web link renderer ─────────────────────────────────────────
+async function renderLink(area, node, res) {
+  const xmlPath = res.href || (res.files.find(f => f.endsWith('.xml')) || '');
+  let url = '', linkTitle = node.title;
+
+  if (xmlPath) {
+    const fileEntry = findZipFile(xmlPath);
+    if (fileEntry) {
+      const xmlStr = await fileEntry.async('string');
+      const doc    = new DOMParser().parseFromString(xmlStr, 'application/xml');
+      const urlEl  = doc.querySelector('url');
+      if (urlEl) url = urlEl.getAttribute('href') || urlEl.textContent.trim() || '';
+      const titleEl = doc.querySelector('title');
+      if (titleEl) linkTitle = titleEl.textContent.trim() || linkTitle;
+    }
+  }
+
+  const linkBody = url
+    ? `<div class="link-box">
+        <div class="link-url">${escHtml(url)}</div>
+        <a class="open-btn" href="${escHtml(url)}" target="_blank" rel="noopener">Open Link ↗</a>
+       </div>`
+    : `<div class="link-box"><p style="color:var(--muted);font-size:14px">No URL found in this resource.</p></div>`;
+
+  area.innerHTML = cardWrap(linkTitle, 'link', linkBody);
+}
+
+// ── Canvas learning-application-resource ──────────────────────
+async function renderCanvas(area, node, res) {
+  // Try HTML file first (assignment body, wiki page, etc.)
+  const htmlFile = res.files.find(f => f.endsWith('.html'));
+  const xmlFile  = res.files.find(f => f.endsWith('.xml'));
+
+  // Determine sub-type from XML
+  let subType = 'canvas';
+  let metaHtml = '';
+  if (xmlFile) {
+    const xmlEntry = findZipFile(xmlFile);
+    if (xmlEntry) {
+      const xmlStr = await xmlEntry.async('string');
+      const doc    = new DOMParser().parseFromString(xmlStr, 'application/xml');
+      const root   = doc.documentElement;
+      const rootName = root.localName || root.tagName || '';
+      if (rootName === 'assignment') {
+        subType = 'canvas';
+        const pts  = doc.querySelector('points_possible');
+        const sub  = doc.querySelector('submission_types');
+        const grading = doc.querySelector('grading_type');
+        metaHtml = buildMeta([
+          pts     ? ['Points',          pts.textContent]     : null,
+          grading ? ['Grading',         grading.textContent] : null,
+          sub     ? ['Submission Types', sub.textContent.replace(/,/g,', ')] : null,
+        ]);
+      } else if (rootName === 'quiz') {
+        subType = 'quiz';
+        const pts     = doc.querySelector('points_possible');
+        const qcount  = doc.querySelector('question_count');
+        const tLimit  = doc.querySelector('time_limit');
+        metaHtml = buildMeta([
+          pts    ? ['Points', pts.textContent] : null,
+          qcount ? ['Questions', qcount.textContent] : null,
+          tLimit ? ['Time Limit', tLimit.textContent + ' min'] : null,
+        ]);
+      }
+    }
+  }
+
+  let bodyHtml = '';
+  if (htmlFile) {
+    const htmlEntry = findZipFile(htmlFile);
+    if (htmlEntry) {
+      let html = await htmlEntry.async('string');
+      html = extractBody(html);
+      html = await resolveImages(html, htmlFile);
+      bodyHtml = `<div class="html-content">${html}</div>`;
+    }
+  }
+
+  if (!bodyHtml && !metaHtml) {
+    bodyHtml = `<div class="placeholder"><p style="font-size:13px">No previewable content found for this item.</p></div>`;
+  }
+
+  area.innerHTML = cardWrap(node.title, subType, bodyHtml, metaHtml);
+}
+
+function buildMeta(pairs) {
+  const items = pairs.filter(Boolean).map(([label, val]) =>
+    `<div class="meta-item"><span class="meta-label">${escHtml(label)}</span><span class="meta-value">${escHtml(val)}</span></div>`
+  ).join('');
+  return items ? `<div class="meta-row">${items}</div>` : '';
+}
+
+// ── LTI renderer ──────────────────────────────────────────────
+function renderLTI(area, node, res) {
+  area.innerHTML = cardWrap(node.title, 'lti',
+    `<div class="placeholder"><div class="placeholder-icon">🔧</div>
+     <p>This is an external tool (LTI). It can only be launched inside a Learning Management System.</p>
+     </div>`);
+}
+
+function renderOther(area, node, res) {
+  area.innerHTML = cardWrap(node.title, 'other',
+    `<div class="placeholder"><p style="font-size:13px">Resource type: <code>${escHtml(res.type)}</code><br>Files: ${res.files.map(f => escHtml(f)).join(', ') || '(none)'}</p></div>`);
+}
+
+// ── Zip helpers ───────────────────────────────────────────────
+function findZipFile(path) {
+  if (!path) return null;
+  // Try exact path
+  let f = zip.file(path);
+  if (f) return f;
+  // Try without leading slash
+  f = zip.file(path.replace(/^\/+/, ''));
+  if (f) return f;
+  // Try case-insensitive
+  const lower = path.toLowerCase();
+  const all = Object.keys(zip.files);
+  const match = all.find(k => k.toLowerCase() === lower);
+  return match ? zip.file(match) : null;
+}
+
+async function getBlobUrl(path) {
+  if (!path) return null;
+  if (blobCache[path]) return blobCache[path];
+  const f = findZipFile(path);
+  if (!f) return null;
+  try {
+    const blob = await f.async('blob');
+    const url  = URL.createObjectURL(blob);
+    blobCache[path] = url;
+    return url;
+  } catch { return null; }
+}
+
+// ── Image resolver ────────────────────────────────────────────
+async function resolveImages(html, basePath) {
+  const baseDir = basePath.includes('/')
+    ? basePath.substring(0, basePath.lastIndexOf('/') + 1)
+    : '';
+
+  function resolveSrc(src) {
+    if (!src || src.startsWith('http') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('#')) return null;
+    try {
+      const url = new URL(src, 'https://x/' + baseDir);
+      return decodeURIComponent(url.pathname.substring(1));
+    } catch { return baseDir + src; }
+  }
+
+  // Collect all unique src / url() references
+  const srcRe  = /(<img[^>]+src=["'])([^"']+)(["'])/gi;
+  const urlRe  = /(url\(["']?)([^"')]+)(["']?\))/gi;
+  const paths  = new Set();
+
+  for (const re of [srcRe, urlRe]) {
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(html)) !== null) {
+      const p = resolveSrc(m[2]);
+      if (p) paths.add(p);
+    }
+  }
+
+  // Pre-fetch blobs
+  const blobMap = {};
+  await Promise.all([...paths].map(async p => {
+    const url = await getBlobUrl(p);
+    if (url) blobMap[p] = url;
+  }));
+
+  // Replace in HTML
+  html = html.replace(srcRe, (_, pre, src, post) => {
+    const p = resolveSrc(src);
+    return pre + (blobMap[p] || src) + post;
+  });
+  html = html.replace(urlRe, (_, pre, src, post) => {
+    const p = resolveSrc(src);
+    return pre + (blobMap[p] || src) + post;
+  });
+
+  return html;
+}
+
+function extractBody(html) {
+  const m = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return m ? m[1] : html;
+}
+
+// ── QTI 1.2 renderer ─────────────────────────────────────────
+const QTI_NS = 'http://www.imsglobal.org/xsd/ims_qtiasiv1p2';
+
+function qAll(el, tag) { return Array.from(el.getElementsByTagNameNS(QTI_NS, tag)); }
+function q1(el, tag)   { return el.getElementsByTagNameNS(QTI_NS, tag)[0] || null; }
+
+function getQMeta(item, label) {
+  for (const f of qAll(item, 'qtimetadatafield')) {
+    const lbl = q1(f, 'fieldlabel');
+    const ent = q1(f, 'fieldentry');
+    if (lbl && lbl.textContent.trim() === label) return ent ? ent.textContent.trim() : '';
+  }
+  return '';
+}
+
+function buildQTIHtml(xmlStr) {
+  const doc   = new DOMParser().parseFromString(xmlStr, 'application/xml');
+  const items = doc.getElementsByTagNameNS(QTI_NS, 'item');
+  if (!items.length) return '<div class="placeholder"><p>No questions found in this QTI file.</p></div>';
+
+  const parts = [];
+  for (let i = 0; i < items.length; i++) {
+    parts.push(buildQTIQuestion(items[i], i + 1));
+  }
+  return `<div class="qti-question-list">${parts.join('')}</div>`;
+}
+
+function buildQTIQuestion(item, num) {
+  const qtype  = getQMeta(item, 'question_type');
+  const ident  = item.getAttribute('ident') || String(num);
+  const points = parseFloat(getQMeta(item, 'points_possible')) || 0;
+
+  const pres    = q1(item, 'presentation');
+  const topMat  = pres ? q1(pres, 'material') : null;
+  const topMtxt = topMat ? q1(topMat, 'mattext') : null;
+  const qHtml   = topMtxt ? topMtxt.textContent.replace(/\$IMS-CC-FILEBASE\$[^"' ]*/g, '#') : '';
+
+  const typeLabels = {
+    multiple_choice_question: ['Multiple Choice','chip-mc'],
+    true_false_question:      ['True / False',   'chip-tf'],
+    multiple_answers_question:['Multiple Answers','chip-ma'],
+    essay_question:           ['Essay',          'chip-ess'],
+    multiple_dropdowns_question:['Dropdowns',    'chip-dd'],
+  };
+  const [typeLabel, typeChip] = typeLabels[qtype] || ['Question', 'chip-other'];
+  const ptsLabel = points > 0 ? `<span style="margin-left:auto;font-size:12px;color:var(--muted)">${points} pt${points!==1?'s':''}</span>` : '';
+
+  const header = `<div class="qti-q-header">
+    <span class="qti-q-num">Q${num}</span>
+    <span class="qti-q-chip ${typeChip}">${typeLabel}</span>${ptsLabel}
+  </div>
+  <div class="qti-q-text">${qHtml}</div>`;
+
+  if (qtype === 'essay_question') {
+    return `<div class="qti-q">${header}<textarea class="qti-essay" placeholder="Type your response…"></textarea></div>`;
+  }
+
+  if (qtype === 'multiple_dropdowns_question') {
+    const dropdowns = [];
+    if (pres) {
+      for (const rLid of qAll(pres, 'response_lid')) {
+        const ridIdent = rLid.getAttribute('ident');
+        const mat = q1(rLid, 'material');
+        const key = mat ? (q1(mat, 'mattext') || {textContent:''}).textContent.trim() : ridIdent.replace(/^response_/,'');
+        const opts = qAll(rLid, 'response_label').map(lbl => {
+          const li = lbl.getAttribute('ident');
+          const mt = q1(lbl, 'mattext');
+          return `<option value="${escHtml(li)}">${escHtml(mt ? mt.textContent.trim() : '')}</option>`;
+        }).join('');
+        dropdowns.push({ key, opts });
+      }
+    }
+    let ddHtml = qHtml;
+    for (const { key, opts } of dropdowns) {
+      ddHtml = ddHtml.split(`[${key}]`).join(
+        `<select class="qti-dd-sel"><option value="">— select —</option>${opts}</select>`
+      );
+    }
+    return `<div class="qti-q">${header.replace(qHtml, ddHtml)}</div>`;
+  }
+
+  // MC, TF, Multiple Answers
+  const isMulti    = qtype === 'multiple_answers_question';
+  const inputType  = isMulti ? 'checkbox' : 'radio';
+  const rLid       = pres ? q1(pres, 'response_lid') : null;
+  const choices    = rLid ? qAll(rLid, 'response_label') : [];
+
+  // Correct answers
+  const correctSet = new Set();
+  const feedbacks  = {};
+  const rp = q1(item, 'resprocessing');
+  if (rp) {
+    for (const cond of qAll(rp, 'respcondition')) {
+      const sv = q1(cond, 'setvar');
+      if (!sv || sv.getAttribute('varname') !== 'SCORE') continue;
+      if (sv.getAttribute('action') !== 'Set' || parseFloat(sv.textContent || 0) !== 100) continue;
+      const cv  = q1(cond, 'conditionvar');
+      if (!cv) continue;
+      const andEl = q1(cv, 'and');
+      const parent = andEl || cv;
+      for (const child of parent.childNodes) {
+        const ln = child.localName || (child.nodeName||'').split(':').pop();
+        if (ln === 'varequal') correctSet.add(child.textContent.trim());
+      }
+    }
+  }
+  for (const fb of qAll(item, 'itemfeedback')) {
+    const fi = fb.getAttribute('ident');
+    const mt = q1(fb, 'mattext');
+    if (fi && mt) feedbacks[fi] = mt.textContent.trim();
+  }
+
+  const choiceHtml = choices.map(c => {
+    const ci = c.getAttribute('ident');
+    const mt = q1(c, 'mattext');
+    return `<label class="c-label" id="cl-${escHtml(ident)}-${escHtml(ci)}">
+      <input type="${inputType}" name="qz${escHtml(ident)}" value="${escHtml(ci)}">
+      <span>${escHtml(mt ? mt.textContent.trim() : '')}</span>
+    </label>`;
+  }).join('');
+
+  const hasCorrect = correctSet.size > 0;
+  const checkBtn   = hasCorrect ? `<button class="check-btn" onclick="qCheck('${escHtml(ident)}',${isMulti})">Check Answer</button>` : '';
+  const legend     = isMulti ? `<div class="legend" id="leg-${escHtml(ident)}">
+    <span class="leg-swatch" style="background:#dafbe1;border:1px solid var(--green)"></span>Correct &nbsp;
+    <span class="leg-swatch" style="background:#ffebe9;border:1px solid var(--red)"></span>Wrong selection &nbsp;
+    <span class="leg-swatch" style="background:#dafbe1;border:1px dashed var(--green)"></span>Missed
+  </div>` : '';
+
+  const hint = isMulti ? '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">Select all that apply.</p>' : '';
+
+  // Store data for check function
+  const key = `qdata_${ident}`;
+  window[key] = { correctSet, feedbacks };
+
+  return `<div class="qti-q">${header}${hint}
+    <div class="choices">${choiceHtml}</div>
+    ${checkBtn}${legend}
+    <div class="fb-box" id="fb-${escHtml(ident)}"></div>
+  </div>`;
+}
+
+// ── QTI answer check ─────────────────────────────────────────
+function qCheck(ident, isMulti) {
+  const data = window[`qdata_${ident}`];
+  if (!data) return;
+  const { correctSet, feedbacks } = data;
+  const fb = document.getElementById(`fb-${ident}`);
+
+  if (!isMulti) {
+    const sel = document.querySelector(`input[name="qz${ident}"]:checked`);
+    if (!sel) { alert('Please select an answer first.'); return; }
+    const correct = [...correctSet][0];
+    const isOk    = sel.value === correct;
+
+    document.querySelectorAll(`input[name="qz${ident}"]`).forEach(inp => {
+      const lbl = document.getElementById(`cl-${ident}-${inp.value}`);
+      if (!lbl) return;
+      lbl.classList.remove('correct','incorrect');
+      if (inp.value === correct)         lbl.classList.add('correct');
+      else if (inp.value === sel.value)  lbl.classList.add('incorrect');
+    });
+
+    fb.style.display = 'block';
+    fb.className = 'fb-box ' + (isOk ? 'correct' : 'incorrect');
+    const fbMsg = isOk
+      ? (feedbacks[`${correct}_fb`] ? `✓ Correct! ${feedbacks[`${correct}_fb`]}` : '✓ Correct!')
+      : (feedbacks[`${sel.value}_fb`] ? `✗ Incorrect. ${feedbacks[`${sel.value}_fb`]}` : '✗ Incorrect. Try again.');
+    fb.textContent = fbMsg;
+  } else {
+    const selected = new Set(Array.from(document.querySelectorAll(`input[name="qz${ident}"]:checked`)).map(e => e.value));
+    const allOk = correctSet.size === selected.size && [...correctSet].every(v => selected.has(v));
+
+    document.querySelectorAll(`input[name="qz${ident}"]`).forEach(inp => {
+      const lbl = document.getElementById(`cl-${ident}-${inp.value}`);
+      if (!lbl) return;
+      lbl.classList.remove('correct','incorrect','missed');
+      if      (correctSet.has(inp.value) &&  selected.has(inp.value)) lbl.classList.add('correct');
+      else if (!correctSet.has(inp.value) && selected.has(inp.value)) lbl.classList.add('incorrect');
+      else if  (correctSet.has(inp.value) && !selected.has(inp.value)) lbl.classList.add('missed');
+    });
+
+    const leg = document.getElementById(`leg-${ident}`);
+    if (leg) leg.style.display = 'block';
+
+    fb.style.display = 'block';
+    fb.className = 'fb-box ' + (allOk ? 'correct' : 'incorrect');
+    fb.textContent = allOk ? '✓ Correct!' : '✗ Not quite — see color coding above.';
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────
+function backToUpload() {
+  // Revoke all blob URLs
+  Object.values(blobCache).forEach(url => URL.revokeObjectURL(url));
+  blobCache = {};
+  zip = null;
+  allItems = [];
+  hide('screen-viewer');
+  show('screen-upload');
+}
+
+// ── File input wiring ─────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => loadFile(e.target.files[0]));
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('drag-over'));
+dz.addEventListener('drop',      e  => { e.preventDefault(); dz.classList.remove('drag-over'); loadFile(e.dataTransfer.files[0]); });
+</script>
+</body>
+</html>
