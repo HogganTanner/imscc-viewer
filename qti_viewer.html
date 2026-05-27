@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas QTI Viewer</title>
+<style>
+:root {
+  --blue: #0770e3;
+  --blue-dark: #0560c1;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --gray-bg: #f0f2f5;
+  --gray-light: #f6f8fa;
+  --border: #d0d7de;
+  --text: #24292f;
+  --muted: #656d76;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--gray-bg); color: var(--text); font-size: 15px; }
+
+/* ── Upload screen ─────────────────────────────────── */
+#upload-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.upload-card {
+  background: white;
+  border-radius: 14px;
+  padding: 48px 40px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+  max-width: 500px;
+  width: 100%;
+}
+.upload-icon { font-size: 52px; margin-bottom: 16px; }
+.upload-card h1 { font-size: 26px; margin-bottom: 8px; }
+.upload-card > p { color: var(--muted); margin-bottom: 28px; line-height: 1.5; }
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 32px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--blue); background: #f0f7ff; }
+.drop-label { color: var(--muted); margin-bottom: 14px; }
+.choose-btn {
+  display: inline-block;
+  padding: 9px 20px;
+  background: var(--blue);
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background .15s;
+}
+.choose-btn:hover { background: var(--blue-dark); }
+#file-input { display: none; }
+.upload-hint { font-size: 12px; color: var(--muted); }
+
+/* ── Quiz layout ───────────────────────────────────── */
+#quiz-screen { display: none; min-height: 100vh; flex-direction: column; }
+
+.quiz-header {
+  background: white;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: wrap;
+}
+.quiz-title { font-weight: 600; font-size: 15px; white-space: nowrap; }
+.progress-wrap { flex: 1; min-width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width .3s; }
+.progress-text { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.header-btns { display: flex; gap: 6px; margin-left: auto; }
+.btn {
+  padding: 6px 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  transition: background .13s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--gray-light); }
+.btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+.btn.primary:hover { background: var(--blue-dark); }
+.btn:disabled { opacity: .4; cursor: default; }
+
+.quiz-body {
+  display: flex;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 14px;
+  gap: 18px;
+  width: 100%;
+  align-items: flex-start;
+}
+
+/* ── Sidebar ───────────────────────────────────────── */
+.sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 58px; }
+.sidebar-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 8px; }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.filter-btn {
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background .13s, color .13s;
+}
+.filter-btn:hover { background: var(--gray-light); }
+.filter-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+.q-list {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-y: auto;
+  max-height: calc(100vh - 160px);
+}
+.q-list-item {
+  padding: 8px 11px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: background .12s;
+}
+.q-list-item:last-child { border-bottom: none; }
+.q-list-item:hover { background: var(--gray-light); }
+.q-list-item.active { background: #e8f0fe; }
+.q-list-item.active .q-num { color: var(--blue); }
+.q-num { font-weight: 700; min-width: 22px; color: var(--muted); font-size: 12px; }
+.mini-badge {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #e1e4e8;
+  color: var(--muted);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* ── Question card ─────────────────────────────────── */
+.question-area { flex: 1; min-width: 0; }
+.question-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px 26px;
+}
+.q-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.q-num-large { font-size: 13px; font-weight: 600; color: var(--muted); }
+.q-type-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.chip-mc  { background: #ddf4ff; color: #0550ae; }
+.chip-tf  { background: #fff8c5; color: #9a6700; }
+.chip-ma  { background: #dafbe1; color: #116329; }
+.chip-essay { background: #ffebe9; color: #a40e26; }
+.chip-dd  { background: #f6f0ff; color: #6639ba; }
+.q-pts { margin-left: auto; font-size: 13px; color: var(--muted); font-weight: 500; }
+
+.question-text {
+  margin-bottom: 20px;
+  line-height: 1.65;
+}
+.question-text table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.question-text td, .question-text th { border: 1px solid var(--border); padding: 8px 10px; }
+.question-text img { max-width: 100%; height: auto; border-radius: 4px; }
+.question-text p { margin-bottom: 8px; }
+
+/* ── Choices ───────────────────────────────────────── */
+.choices { display: flex; flex-direction: column; gap: 9px; }
+.choice-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color .14s, background .14s;
+  line-height: 1.5;
+}
+.choice-label:hover { border-color: var(--blue); background: #f0f7ff; }
+.choice-label input[type=radio],
+.choice-label input[type=checkbox] { margin-top: 3px; flex-shrink: 0; accent-color: var(--blue); }
+.choice-label.correct  { border-color: var(--green)!important; background: #dafbe1!important; }
+.choice-label.incorrect { border-color: var(--red)!important; background: #ffebe9!important; }
+.choice-label.missed   { border-color: var(--green)!important; background: #dafbe1!important; border-style: dashed!important; }
+
+/* ── Essay ─────────────────────────────────────────── */
+.essay-area {
+  width: 100%;
+  min-height: 130px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  line-height: 1.5;
+  color: var(--text);
+}
+.essay-area:focus { outline: none; border-color: var(--blue); }
+.essay-note { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+/* ── Dropdowns ─────────────────────────────────────── */
+.q-dropdown {
+  padding: 4px 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  font-size: 14px;
+  font-family: inherit;
+  background: white;
+  cursor: pointer;
+  color: var(--text);
+}
+.q-dropdown:focus { outline: none; border-color: var(--blue); }
+
+/* ── Feedback ──────────────────────────────────────── */
+.feedback-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 7px;
+  font-size: 14px;
+  line-height: 1.55;
+  display: none;
+}
+.feedback-box.correct  { background: #dafbe1; border: 1px solid #a7d9b5; color: #116329; }
+.feedback-box.incorrect { background: #ffebe9; border: 1px solid #f5b8be; color: #a40e26; }
+.check-btn {
+  margin-top: 14px;
+  padding: 8px 17px;
+  background: var(--blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.check-btn:hover { background: var(--blue-dark); }
+
+/* ── Bottom nav ────────────────────────────────────── */
+.bottom-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+.nav-counter { font-size: 13px; color: var(--muted); }
+
+/* ── Legend (multiple answers) ─────────────────────── */
+.legend { margin-top: 10px; font-size: 12px; color: var(--muted); display: none; }
+.legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.leg-correct  { background: #dafbe1; border: 1px solid var(--green); }
+.leg-incorrect { background: #ffebe9; border: 1px solid var(--red); }
+.leg-missed   { background: #dafbe1; border: 1px dashed var(--green); }
+</style>
+</head>
+<body>
+
+<!-- ── Upload screen ─────────────────────────────────── -->
+<div id="upload-screen">
+  <div class="upload-card">
+    <div class="upload-icon">📋</div>
+    <h1>Canvas QTI Viewer</h1>
+    <p>Upload your Canvas QTI 1.2 XML file to browse and interact with your quiz questions.</p>
+    <div class="drop-zone" id="drop-zone">
+      <p class="drop-label">Drag &amp; drop your XML file here, or</p>
+      <label class="choose-btn" for="file-input">Choose File</label>
+      <input type="file" id="file-input" accept=".xml">
+    </div>
+    <p class="upload-hint">Supports QTI 1.2 XML files exported from Canvas LMS · No data leaves your computer</p>
+  </div>
+</div>
+
+<!-- ── Quiz screen ───────────────────────────────────── -->
+<div id="quiz-screen">
+  <div class="quiz-header">
+    <span class="quiz-title" id="quiz-title">Quiz</span>
+    <div class="progress-wrap"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <span class="progress-text" id="progress-text"></span>
+    <div class="header-btns">
+      <button class="btn" onclick="navigate(-1)" id="hdr-prev">← Prev</button>
+      <button class="btn" onclick="navigate(1)"  id="hdr-next">Next →</button>
+      <button class="btn" onclick="backToUpload()">↩ New File</button>
+    </div>
+  </div>
+
+  <div class="quiz-body">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-title">Questions</div>
+      <div class="filter-bar" id="filter-bar"></div>
+      <div class="q-list" id="q-list"></div>
+    </div>
+
+    <!-- Main -->
+    <div class="question-area">
+      <div class="question-card" id="question-card"></div>
+      <div class="bottom-nav">
+        <button class="btn" onclick="navigate(-1)" id="bot-prev">← Previous</button>
+        <span class="nav-counter" id="nav-counter"></span>
+        <button class="btn primary" onclick="navigate(1)" id="bot-next">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────
+const QTI_NS = 'http://www.imsglobal.org/xsd/ims_qtiasiv1p2';
+
+const TYPE_LABELS = {
+  multiple_choice_question:   'Multiple Choice',
+  true_false_question:        'True / False',
+  multiple_answers_question:  'Multiple Answers',
+  essay_question:             'Essay',
+  multiple_dropdowns_question:'Dropdowns',
+};
+const TYPE_CHIPS = {
+  multiple_choice_question:   'chip-mc',
+  true_false_question:        'chip-tf',
+  multiple_answers_question:  'chip-ma',
+  essay_question:             'chip-essay',
+  multiple_dropdowns_question:'chip-dd',
+};
+const MINI_LABELS = {
+  multiple_choice_question:   'MC',
+  true_false_question:        'T/F',
+  multiple_answers_question:  'Multi',
+  essay_question:             'Essay',
+  multiple_dropdowns_question:'Drop',
+};
+
+// ── State ─────────────────────────────────────────────
+let questions    = [];
+let currentIndex = 0;
+let activeFilter = 'all';
+
+// ── XML helpers ───────────────────────────────────────
+function qAll(el, tag) {
+  return Array.from(el.getElementsByTagNameNS(QTI_NS, tag));
+}
+function q1(el, tag) {
+  return el.getElementsByTagNameNS(QTI_NS, tag)[0] || null;
+}
+function getMeta(item, label) {
+  for (const field of qAll(item, 'qtimetadatafield')) {
+    const lbl = q1(field, 'fieldlabel');
+    const ent = q1(field, 'fieldentry');
+    if (lbl && lbl.textContent.trim() === label) return ent ? ent.textContent.trim() : '';
+  }
+  return '';
+}
+
+// ── Parser ────────────────────────────────────────────
+function parseItem(itemEl, displayNum) {
+  const qtype  = getMeta(itemEl, 'question_type');
+  const points = parseFloat(getMeta(itemEl, 'points_possible')) || 0;
+  const ident  = itemEl.getAttribute('ident') || String(displayNum);
+
+  // Question HTML (top-level material, first mattext in presentation)
+  const pres    = q1(itemEl, 'presentation');
+  const topMat  = pres ? q1(pres, 'material') : null;
+  const topMtxt = topMat ? q1(topMat, 'mattext') : null;
+  const questionHtml = topMtxt ? topMtxt.textContent : '';
+
+  const item = { num: displayNum, ident, qtype, points, questionHtml,
+                 choices: [], correctAnswers: [], feedbacks: {}, dropdowns: [] };
+
+  if (qtype === 'multiple_choice_question' || qtype === 'true_false_question' || qtype === 'multiple_answers_question') {
+    // Choices
+    const rLid = pres ? q1(pres, 'response_lid') : null;
+    if (rLid) {
+      for (const label of qAll(rLid, 'response_label')) {
+        const li = label.getAttribute('ident');
+        const mt = q1(label, 'mattext');
+        item.choices.push({ ident: li, text: mt ? mt.textContent : '' });
+      }
+    }
+
+    // Correct answers from resprocessing
+    const rp = q1(itemEl, 'resprocessing');
+    if (rp) {
+      for (const cond of qAll(rp, 'respcondition')) {
+        const sv = q1(cond, 'setvar');
+        if (!sv || sv.getAttribute('varname') !== 'SCORE') continue;
+        const action = sv.getAttribute('action');
+        const val    = parseFloat(sv.textContent) || 0;
+        const isScore100 = (action === 'Set' && val === 100);
+        if (!isScore100) continue;
+
+        const cv  = q1(cond, 'conditionvar');
+        if (!cv) continue;
+        const andEl = q1(cv, 'and');
+        const parent = andEl || cv;
+
+        // Collect direct varequal children (not wrapped in <not>)
+        for (const child of parent.childNodes) {
+          const lname = child.localName || (child.nodeName ? child.nodeName.split(':').pop() : '');
+          if (lname === 'varequal') {
+            item.correctAnswers.push(child.textContent.trim());
+          }
+        }
+      }
+    }
+
+    // Feedbacks
+    for (const fb of qAll(itemEl, 'itemfeedback')) {
+      const fi  = fb.getAttribute('ident');
+      const mt  = q1(fb, 'mattext');
+      if (fi && mt) item.feedbacks[fi] = mt.textContent.trim();
+    }
+
+  } else if (qtype === 'multiple_dropdowns_question') {
+    if (pres) {
+      for (const rLid of qAll(pres, 'response_lid')) {
+        const ridIdent = rLid.getAttribute('ident');        // e.g. "response_C2"
+        const matEl    = q1(rLid, 'material');
+        const keyText  = matEl ? (q1(matEl, 'mattext') || {textContent: ''}).textContent.trim() : '';
+        const key      = keyText || ridIdent.replace(/^response_/, '');  // e.g. "C2"
+        const choices  = [];
+        for (const label of qAll(rLid, 'response_label')) {
+          const li = label.getAttribute('ident');
+          const mt = q1(label, 'mattext');
+          choices.push({ ident: li, text: mt ? mt.textContent.trim() : '' });
+        }
+        item.dropdowns.push({ key, ident: ridIdent, choices });
+      }
+    }
+  }
+
+  return item;
+}
+
+function parseXML(text) {
+  const doc   = new DOMParser().parseFromString(text, 'text/xml');
+  const items = doc.getElementsByTagNameNS(QTI_NS, 'item');
+  questions   = [];
+  for (let i = 0; i < items.length; i++) {
+    questions.push(parseItem(items[i], i + 1));
+  }
+}
+
+// ── Rendering helpers ─────────────────────────────────
+function cleanHtml(html) {
+  // Strip Canvas-specific image base prefix
+  return html.replace(/\$IMS-CC-FILEBASE\$[^"' ]*/g, '#');
+}
+
+function renderDropdowns(q) {
+  let html = cleanHtml(q.questionHtml);
+  for (const dd of q.dropdowns) {
+    const placeholder = `[${dd.key}]`;
+    const opts = dd.choices.map(c =>
+      `<option value="${esc(c.ident)}">${esc(c.text)}</option>`
+    ).join('');
+    const sel = `<select class="q-dropdown" data-rid="${esc(dd.ident)}"><option value="">— select —</option>${opts}</select>`;
+    html = html.split(placeholder).join(sel);
+  }
+  return html;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function typeChip(q) {
+  const lbl = TYPE_LABELS[q.qtype] || q.qtype;
+  const cls = TYPE_CHIPS[q.qtype] || 'chip-mc';
+  return `<span class="q-type-chip ${cls}">${lbl}</span>`;
+}
+
+// ── Build sidebar ─────────────────────────────────────
+function buildSidebar() {
+  const types  = ['all', ...new Set(questions.map(q => q.qtype))];
+  const counts = {};
+  questions.forEach(q => { counts[q.qtype] = (counts[q.qtype] || 0) + 1; });
+
+  // Filter buttons
+  const fb = document.getElementById('filter-bar');
+  fb.innerHTML = '';
+  types.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (t === activeFilter ? ' active' : '');
+    btn.dataset.type = t;
+    const label = t === 'all' ? `All (${questions.length})` : `${MINI_LABELS[t] || t} (${counts[t]})`;
+    btn.textContent = label;
+    btn.onclick = () => setFilter(t);
+    fb.appendChild(btn);
+  });
+
+  buildQList();
+}
+
+function setFilter(t) {
+  activeFilter = t;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.type === t));
+  buildQList();
+  const first = questions.findIndex(q => t === 'all' || q.qtype === t);
+  if (first !== -1) { currentIndex = first; renderQuestion(); }
+}
+
+function buildQList() {
+  const list = document.getElementById('q-list');
+  list.innerHTML = '';
+  questions.forEach((q, i) => {
+    if (activeFilter !== 'all' && q.qtype !== activeFilter) return;
+    const div = document.createElement('div');
+    div.className = 'q-list-item' + (i === currentIndex ? ' active' : '');
+    div.dataset.index = i;
+    div.innerHTML = `<span class="q-num">${q.num}</span><span class="mini-badge">${MINI_LABELS[q.qtype] || '?'}</span>`;
+    div.onclick = () => { currentIndex = i; renderQuestion(); };
+    list.appendChild(div);
+  });
+  scrollSidebarToActive();
+}
+
+function scrollSidebarToActive() {
+  const el = document.querySelector('.q-list-item.active');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+// ── Render question ───────────────────────────────────
+function renderQuestion() {
+  const q    = questions[currentIndex];
+  const card = document.getElementById('question-card');
+
+  // Update sidebar highlight
+  document.querySelectorAll('.q-list-item').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.index) === currentIndex);
+  });
+  scrollSidebarToActive();
+
+  // Update progress
+  const visible    = visibleQuestions();
+  const vIdx       = visible.indexOf(currentIndex);
+  const total      = visible.length;
+  const pct        = total ? ((vIdx + 1) / total * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-text').textContent  = `${vIdx + 1} / ${total}`;
+  document.getElementById('nav-counter').textContent    = `Question ${vIdx + 1} of ${total}`;
+
+  const ptsLabel = q.points > 0 ? `<span class="q-pts">${q.points} pt${q.points !== 1 ? 's' : ''}</span>` : '';
+  const header = `
+    <div class="q-card-header">
+      <span class="q-num-large">Q${q.num}</span>
+      ${typeChip(q)}
+      ${ptsLabel}
+    </div>`;
+
+  // Render by type
+  if (q.qtype === 'multiple_dropdowns_question') {
+    card.innerHTML = header + `<div class="question-text">${renderDropdowns(q)}</div>`;
+    return;
+  }
+
+  if (q.qtype === 'essay_question') {
+    card.innerHTML = header +
+      `<div class="question-text">${cleanHtml(q.questionHtml)}</div>
+       <textarea class="essay-area" placeholder="Type your response here…"></textarea>
+       <p class="essay-note">📝 Free-response — no automatic grading for essay questions.</p>`;
+    return;
+  }
+
+  // Multiple choice, true/false, multiple answers
+  const isMulti = q.qtype === 'multiple_answers_question';
+  const inputType = isMulti ? 'checkbox' : 'radio';
+  const hint = isMulti ? '<p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Select all that apply.</p>' : '';
+
+  const choicesHtml = q.choices.map(c => `
+    <label class="choice-label" id="cl-${esc(q.ident)}-${esc(c.ident)}">
+      <input type="${inputType}" name="q${esc(q.ident)}" value="${esc(c.ident)}">
+      <span>${esc(c.text)}</span>
+    </label>`).join('');
+
+  const hasCorrect = q.correctAnswers.length > 0;
+  const checkBtnHtml = hasCorrect
+    ? `<button class="check-btn" onclick="checkAnswer('${esc(q.ident)}')">Check Answer</button>` : '';
+
+  const legendHtml = isMulti ? `
+    <div class="legend" id="legend-${esc(q.ident)}">
+      <span class="leg-correct"></span>Correct &nbsp;
+      <span class="leg-incorrect"></span>Wrong selection &nbsp;
+      <span class="leg-missed"></span>Missed answer
+    </div>` : '';
+
+  card.innerHTML = header +
+    `<div class="question-text">${cleanHtml(q.questionHtml)}</div>
+     ${hint}
+     <div class="choices" id="choices-${esc(q.ident)}">${choicesHtml}</div>
+     ${checkBtnHtml}
+     ${legendHtml}
+     <div class="feedback-box" id="fb-${esc(q.ident)}"></div>`;
+}
+
+// ── Answer checking ───────────────────────────────────
+function checkAnswer(qident) {
+  const q = questions.find(qq => qq.ident === qident);
+  if (!q) return;
+  const fb = document.getElementById(`fb-${qident}`);
+
+  if (q.qtype === 'multiple_choice_question' || q.qtype === 'true_false_question') {
+    const sel = document.querySelector(`input[name="q${qident}"]:checked`);
+    if (!sel) { alert('Please select an answer first.'); return; }
+    const correct   = q.correctAnswers[0];
+    const isCorrect = sel.value === correct;
+
+    q.choices.forEach(c => {
+      const lbl = document.getElementById(`cl-${qident}-${c.ident}`);
+      if (!lbl) return;
+      lbl.classList.remove('correct', 'incorrect');
+      if (c.ident === correct) lbl.classList.add('correct');
+      else if (c.ident === sel.value) lbl.classList.add('incorrect');
+    });
+
+    fb.style.display = 'block';
+    if (isCorrect) {
+      fb.className = 'feedback-box correct';
+      const fbKey  = `${correct}_fb`;
+      fb.textContent = q.feedbacks[fbKey] ? `✓ Correct! ${q.feedbacks[fbKey]}` : '✓ Correct!';
+    } else {
+      fb.className = 'feedback-box incorrect';
+      const fbKey  = `${sel.value}_fb`;
+      fb.textContent = q.feedbacks[fbKey] ? `✗ Incorrect. ${q.feedbacks[fbKey]}` : '✗ Incorrect. Try again.';
+    }
+
+  } else if (q.qtype === 'multiple_answers_question') {
+    const selVals = Array.from(document.querySelectorAll(`input[name="q${qident}"]:checked`)).map(el => el.value);
+    const correct = new Set(q.correctAnswers);
+    const selSet  = new Set(selVals);
+    const allOk   = correct.size === selSet.size && [...correct].every(v => selSet.has(v));
+
+    q.choices.forEach(c => {
+      const lbl = document.getElementById(`cl-${qident}-${c.ident}`);
+      if (!lbl) return;
+      lbl.classList.remove('correct', 'incorrect', 'missed');
+      if      (correct.has(c.ident) &&  selSet.has(c.ident)) lbl.classList.add('correct');
+      else if (!correct.has(c.ident) && selSet.has(c.ident)) lbl.classList.add('incorrect');
+      else if  (correct.has(c.ident) && !selSet.has(c.ident)) lbl.classList.add('missed');
+    });
+
+    const leg = document.getElementById(`legend-${qident}`);
+    if (leg) leg.style.display = 'block';
+
+    fb.style.display = 'block';
+    fb.className = allOk ? 'feedback-box correct' : 'feedback-box incorrect';
+    fb.textContent = allOk
+      ? '✓ Correct! You selected the right answer(s).'
+      : '✗ Not quite. See color coding above for details.';
+  }
+}
+
+// ── Navigation ────────────────────────────────────────
+function visibleQuestions() {
+  return questions.map((q, i) => (activeFilter === 'all' || q.qtype === activeFilter) ? i : -1).filter(i => i !== -1);
+}
+
+function navigate(dir) {
+  const vis  = visibleQuestions();
+  const cur  = vis.indexOf(currentIndex);
+  const next = cur + dir;
+  if (next >= 0 && next < vis.length) {
+    currentIndex = vis[next];
+    renderQuestion();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+// ── File loading ──────────────────────────────────────
+function loadFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      parseXML(e.target.result);
+      if (questions.length === 0) {
+        alert('No questions found. Make sure this is a QTI 1.2 XML file exported from Canvas.');
+        return;
+      }
+      document.getElementById('upload-screen').style.display  = 'none';
+      document.getElementById('quiz-screen').style.display    = 'flex';
+      document.getElementById('quiz-title').textContent       = `${questions.length} Questions`;
+      currentIndex  = 0;
+      activeFilter  = 'all';
+      buildSidebar();
+      renderQuestion();
+    } catch (err) {
+      alert('Error reading file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function backToUpload() {
+  document.getElementById('quiz-screen').style.display   = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+  questions = [];
+}
+
+// ── Event listeners ───────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => loadFile(e.target.files[0]));
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('drag-over'));
+dz.addEventListener('drop',      e  => { e.preventDefault(); dz.classList.remove('drag-over'); loadFile(e.dataTransfer.files[0]); });
+
+document.addEventListener('keydown', e => {
+  const tag = (document.activeElement || {}).tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigate(1);
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigate(-1);
+});
+</script>
+</body>
+</html>
